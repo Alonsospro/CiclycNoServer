@@ -391,9 +391,18 @@ class GasService {
     url.searchParams.set('center', config.getCenterCode(record.center));
     const gid = String(spreadsheetUrl).match(/[#&?]gid=(\d+)/)?.[1];
     if (gid) url.searchParams.set('gid', gid);
-    const response = await fetch(url.toString(), { signal: AbortSignal.timeout(15000), headers: { Accept: 'application/json' } });
-    if (!response.ok) throw new Error('No se pudo leer Google Sheets');
-    const result = await response.json();
+    const read = async target => {
+      const response = await fetch(target.toString(), { signal: AbortSignal.timeout(15000), headers: { Accept: 'application/json' } });
+      if (!response.ok) throw new Error('No se pudo leer Google Sheets');
+      return response.json();
+    };
+    let result = await read(url);
+    // The shared final reader preserves folder, manifest, centre and tab validation.
+    if (!result.success && /no soportada/i.test(result.error || '')) {
+      const readerUrl = new URL(config.integrations.CICLICOS_URL);
+      readerUrl.search = url.search;
+      if (readerUrl.toString() !== url.toString()) result = await read(readerUrl);
+    }
     if (!result.success || !Array.isArray(result.headers) || !Array.isArray(result.rows)) {
       const message = /no soportada/i.test(result.error || '') ? 'Actualice gas/Code.gs en Apps Script para habilitar el lector de métricas' : result.error;
       const error = new Error(message || 'Apps Script devolvió una tabla de inventario inválida');
