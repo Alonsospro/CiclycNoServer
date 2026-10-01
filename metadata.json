@@ -1,0 +1,8 @@
+{
+  "name": "NIBOL Inventarios",
+  "description": "Sistema de gestión de inventarios (Cíclicos, Barrido, Semanales y Mensuales) NIBOL",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": []
+}
