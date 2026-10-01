@@ -4,14 +4,14 @@ La integración está preparada pero permanece desactivada hasta configurar y pr
 
 ## Destino y privacidad
 
-Carpeta elegida: [PERSISTENCIA](https://drive.google.com/drive/folders/1wFLtH6Cb9chLcyc4w-5MBYQYpzdSXNN6).
+Carpeta de estado: [Estado de la aplicación](https://drive.google.com/drive/folders/1ZLjemo5YyB1zOUEb07OXzY3L_SA67kJF), dentro de PERSISTENCIA.
 
-Se detectó acceso de edición para cualquiera con el enlace. Antes de cargar estado, seleccionar **Compartir → Acceso general → Restringido → Guardar**. Crear dentro una subcarpeta **Estado de la aplicación** y usar su ID. No compartir públicamente la subcarpeta: incluye hashes de contraseñas de usuarios, conteos y auditoría. Nunca guardar el token en GitHub, HTML o Google Docs.
+Se verificaron los permisos de la subcarpeta: solo aparece el propietario y no hay acceso público. Su ID es `1ZLjemo5YyB1zOUEb07OXzY3L_SA67kJF`. Mantenerla restringida: incluye hashes de contraseñas de usuarios, conteos y auditoría. Nunca guardar el token en GitHub, HTML o Google Docs.
 
 ## Publicar el servicio
 
 1. Crear un proyecto **separado** en Apps Script. Copiar únicamente `gas/StateStore.gs` al archivo `Code.gs`. No añadirlo al proyecto existente: ambos tienen su propia función `doPost`.
-2. En **Configuración del proyecto → Propiedades del script**, definir `DRIVE_STATE_FOLDER_ID` con el ID de la subcarpeta y `DRIVE_STATE_TOKEN` con una clave aleatoria de al menos 32 caracteres. Por ejemplo, generar una clave local con `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. Copiarla a las propiedades del script y al archivo privado `.env`, sin enviarla por chat.
+2. En **Configuración del proyecto → Propiedades del script**, definir `DRIVE_STATE_FOLDER_ID` como `1ZLjemo5YyB1zOUEb07OXzY3L_SA67kJF` y `DRIVE_STATE_TOKEN` con la clave del archivo privado `.env` (preparada localmente; no enviarla por chat). Si se reemplaza, usar una clave aleatoria de al menos 32 caracteres y actualizarla también en Vercel.
 3. Implementar como **Aplicación web**, ejecutar como el propietario de la carpeta y permitir que el servidor acceda al endpoint. El servicio exige el token en cada POST; no expone el estado mediante GET. Autorizar el acceso de Apps Script a Drive y copiar la URL `/exec` a `DRIVE_STATE_URL`.
 4. Mantener **un solo proyecto de Apps Script** como escritor del estado. Su bloqueo serializa la validación y publicación de transacciones. Todos los despliegues de Vercel deben usar el mismo endpoint.
 
