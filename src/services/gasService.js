@@ -1043,7 +1043,8 @@ class GasService {
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3500);
+      // Apps Script puede tardar varios segundos en arrancar en frío; 3.5 s ocultaba todo el historial como si estuviera vacío.
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
 
       const response = await fetch(targetUrl.toString(), {
         method: 'GET',
