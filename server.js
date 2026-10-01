@@ -17,6 +17,7 @@ app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // API Routes
+app.use('/api', require('./src/middlewares/driveStateMiddleware'));
 app.use('/api/auth', require('./src/routes/authRoutes'));
 app.use('/api/inventories', require('./src/routes/inventoryRoutes'));
 app.use('/api/barrido', require('./src/routes/barridoRoutes'));
@@ -34,8 +35,8 @@ app.get('/api/health', (req, res) => {
     appName: 'NIBOL Inventarios Cíclicos, Barrido, Semanales y Mensuales',
     timestamp: new Date().toISOString(),
     version: '1.0.0',
-    storage: isVercel ? 'ephemeral' : 'persistent',
-    warning: isVercel ? 'Entorno Vercel detectado: los datos almacenados en disco (inventarios, fotos, historial) son efímeros y se perderán entre deploys. Se recomienda usar un servidor persistente (VPS) para producción.' : null
+    storage: storagePath.remoteEnabled ? 'drive' : (isVercel ? 'ephemeral' : 'persistent'),
+    warning: isVercel && !storagePath.remoteEnabled ? 'El estado operativo depende del disco temporal. Configure STORAGE_BACKEND=drive para persistencia remota.' : null
   });
 });
 

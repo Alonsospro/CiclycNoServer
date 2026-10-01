@@ -155,6 +155,10 @@ class AuthService {
   }
 
   initUsers() {
+    if (storagePath.remoteEnabled && !storagePath.remoteContext.getStore()) {
+      this.usersCache = null;
+      return bundledUsers;
+    }
     const existing = storagePath.readJson(this.usersFile, null);
     if (Array.isArray(existing) && existing.length > 0) {
       const alonso = existing.find(u => u.username && u.username.toLowerCase() === 'alonso');
@@ -335,6 +339,15 @@ class AuthService {
   }
 
   getUsersList() {
+    if (storagePath.remoteEnabled) {
+      const users = storagePath.readJson(this.usersFile, null);
+      if (Array.isArray(users) && users.length) return users;
+      // Seed only users; never import residual inventories from a deployment.
+      const seed = storagePath.clone(bundledUsers);
+      if (!Array.isArray(seed) || !seed.length) throw new Error('Falta la base inicial de usuarios.');
+      storagePath.writeJson(this.usersFile, seed);
+      return seed;
+    }
     if (this.usersCache && this.usersCache.length > 0) {
       return this.usersCache;
     }
@@ -347,7 +360,7 @@ class AuthService {
   }
 
   saveUsersList(users) {
-    this.usersCache = users;
+    if (!storagePath.remoteEnabled) this.usersCache = users;
     storagePath.writeJson(this.usersFile, users);
   }
 

@@ -31,6 +31,9 @@ class StoragePath {
     this.dirListings = new Map();
     this.CACHE_TTL_MS = 60 * 1000; // 60 seconds refresh window
     this.operationContext = new AsyncLocalStorage();
+    this.remoteContext = new AsyncLocalStorage();
+    this.remoteEnabled = process.env.STORAGE_BACKEND === 'drive';
+    this.remoteStore = this.remoteEnabled ? new (require('./driveStateStore'))() : null;
     this.operationTails = new Map();
     this.knownMissing = new Set();
     this.loaded = false;
@@ -167,6 +170,7 @@ class StoragePath {
 
   getUsersFilePath() {
     const tmpPath = path.join(this.baseDir, 'users.json');
+    if (this.remoteEnabled) return tmpPath;
     if (fs.existsSync(tmpPath)) return tmpPath;
     if (this.initialDataDir) {
       const initPath = path.join(this.initialDataDir, 'users.json');
@@ -225,6 +229,7 @@ class StoragePath {
   }
 
   async ensureReady() {
+    if (this.remoteEnabled) return;
     if (this.loaded) return;
     if (!this.initializing) {
       this.initializing = Promise.resolve()
@@ -240,6 +245,13 @@ class StoragePath {
     if (ctx) {
       const rel = this.getRelativePath(filePath);
       if (ctx.changes.has(rel)) return this.clone(ctx.changes.get(rel).data ?? defaultValue);
+    }
+    if (this.remoteEnabled && this.isRemotePath(filePath)) {
+      const remote = this.remoteContext.getStore();
+      if (!remote) throw new PersistenceError('Estado remoto fuera de una solicitud.', 'DRIVE_STATE_CONTEXT');
+      const rel = this.getRelativePath(filePath);
+      const data = remote.changes.has(rel) ? remote.changes.get(rel) : remote.documents[rel]?.data;
+      return this.clone(data ?? defaultValue);
     }
     if (this.knownMissing.has(key)) return this.clone(defaultValue);
     if (this.memoryStore.has(key)) {
@@ -295,6 +307,10 @@ class StoragePath {
       ctx.changes.set(rel, { filePath, data: this.clone(data) });
       return true;
     }
+    if (this.remoteEnabled && this.isRemotePath(filePath)) {
+      this.stageRemote(filePath, data);
+      return true;
+    }
     const key = this.normalizeKey(filePath);
     const cloned = JSON.parse(JSON.stringify(data));
     this.memoryStore.set(key, cloned);
@@ -330,6 +346,19 @@ class StoragePath {
   }
 
   listFiles(dirPath) {
+    if (this.remoteEnabled && /^(inventories|justifications|history|audit|trash|sync)$/.test(this.getRelativePath(dirPath))) {
+      const remote = this.requireRemote();
+      const prefix = this.getRelativePath(dirPath) + '/';
+      const files = new Set(Object.keys(remote.documents).filter(key => key.startsWith(prefix) && remote.documents[key].data !== null));
+      for (const [key, data] of remote.changes) {
+        if (key.startsWith(prefix)) { if (data === null) files.delete(key); else files.add(key); }
+      }
+      const operation = this.operationContext.getStore();
+      if (operation) for (const [key, change] of operation.changes) {
+        if (key.startsWith(prefix)) { if (change.data === null) files.delete(key); else files.add(key); }
+      }
+      return [...files].map(key => key.slice(prefix.length));
+    }
     const dirKey = this.normalizeKey(dirPath);
     const fileMap = new Map();
 
@@ -385,6 +414,10 @@ class StoragePath {
       ctx.changes.set(rel, { filePath, data: null });
       return true;
     }
+    if (this.remoteEnabled && this.isRemotePath(filePath)) {
+      this.stageRemote(filePath, null);
+      return true;
+    }
     const key = this.normalizeKey(filePath);
     this.memoryStore.delete(key);
     this.cacheTimestamps.delete(key);
@@ -414,11 +447,54 @@ class StoragePath {
 
   clone(value) { return value == null ? value : JSON.parse(JSON.stringify(value)); }
 
+  isRemotePath(filePath) {
+    return require('./driveStateStore').validPath(this.getRelativePath(filePath));
+  }
+
+  requireRemote() {
+    const remote = this.remoteContext.getStore();
+    if (!remote) throw new PersistenceError('Falta el contexto remoto.', 'DRIVE_STATE_CONTEXT');
+    return remote;
+  }
+
+  stageRemote(filePath, data) {
+    this.requireRemote().changes.set(this.getRelativePath(filePath), this.clone(data));
+  }
+
+  async flushRemote(operationId) {
+    if (!this.remoteEnabled) return;
+    const remote = this.requireRemote();
+    if (!remote.changes.size) return;
+    const changes = new Map(remote.changes);
+    const result = await this.remoteStore.commit(remote.documents, changes, operationId);
+    if ([...changes.keys()].some(key => !Number.isInteger(result.versions?.[key]) || result.versions[key] <= (remote.documents[key]?.version || 0))) {
+      throw new PersistenceError('Drive no confirmó las versiones.', 'DRIVE_STATE_INVALID');
+    }
+    for (const [key, data] of changes) {
+      remote.documents[key] = { version: result.versions[key], data: this.clone(data) };
+      remote.changes.delete(key);
+    }
+  }
+
+  async withRemoteRequest(callback) {
+    const documents = await this.remoteStore.snapshot();
+    const revision = createHash('sha256').update(JSON.stringify(Object.entries(documents).map(([key, entry]) => [key, entry.version]))).digest('hex');
+    if (revision !== this.remoteRevision) {
+      require('./metricsService').invalidateCache();
+      this.remoteRevision = revision;
+    }
+    return this.remoteContext.run({ documents, changes: new Map() }, callback);
+  }
+
   isOperational(filePath) {
     return /^(inventories|justifications|history|audit|trash|sync)\//.test(this.getRelativePath(filePath));
   }
 
   cacheConfirmed(filePath, data) {
+    if (this.remoteEnabled && this.isRemotePath(filePath)) {
+      this.stageRemote(filePath, data);
+      return;
+    }
     const key = this.normalizeKey(filePath);
     if (data === null) {
       this.memoryStore.delete(key);
@@ -500,6 +576,8 @@ class StoragePath {
         for (const change of ctx.changes.values()) {
           this.cacheConfirmed(change.filePath, change.data);
         }
+        // Persist counts, receipts and the outbox BEFORE delivering to Sheets.
+        await this.flushRemote(`state:${operationId}`);
         let pending = queue.jobs.length > 0;
         if (pending) pending = await this.drainSync(scope).catch(() => true);
         return result && typeof result === 'object' && !Array.isArray(result) ? { ...result, syncPending: pending } : result;
@@ -525,6 +603,7 @@ class StoragePath {
     // let a second worker overtake a script still running in Google.
     queue.leaseUntil = Date.now() + 7 * 60 * 1000;
     this.cacheConfirmed(file, queue);
+    await this.flushRemote(`lease:${owner}`);
     const job = queue.jobs[0];
     let succeeded = false;
     let failure = null;
@@ -545,10 +624,12 @@ class StoragePath {
     // Keep the lease on ambiguous network failures; the script may still run.
     if (succeeded || !deliveryUnknown) queue.leaseUntil = 0;
     this.cacheConfirmed(file, queue);
+    await this.flushRemote(`ack:${owner}`);
     return queue.jobs.length > 0;
   }
 
   async refreshInventory(id) {
+    if (this.remoteEnabled) return;
     if (this.operationContext.getStore()) return;
     await this.ensureReady();
     const filePath = path.join(this.getInventoriesDirectory(), `${id}.json`);
@@ -570,7 +651,7 @@ class StoragePath {
   async resumeSync() {
     await this.ensureReady();
     const syncDir = path.join(this.baseDir, 'sync');
-    if (!fs.existsSync(syncDir)) return;
+    if (!this.remoteEnabled && !fs.existsSync(syncDir)) return;
     const files = this.listFiles(syncDir);
     const scopes = [];
     for (const f of files) {
@@ -584,6 +665,13 @@ class StoragePath {
   }
 
   async clearAllData(keepUsers = true) {
+    if (this.remoteEnabled) {
+      const remote = this.requireRemote();
+      for (const key of new Set([...Object.keys(remote.documents), ...remote.changes.keys()])) {
+        if (key !== 'users.json' || !keepUsers) remote.changes.set(key, null);
+      }
+      return true;
+    }
     this.memoryStore.clear();
     this.cacheTimestamps.clear();
     this.dirListings.clear();
