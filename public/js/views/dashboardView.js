@@ -183,7 +183,7 @@ window.DashboardView = {
 
       const [recalcRes, auditRes] = await Promise.all([
         window.API.recalculateDashboardMetrics(params),
-        window.API.getAuditLogs(auditParams)
+        window.API.getAuditLogs(auditParams).catch(error => ({ logs: [], error }))
       ]);
 
       if (requestSerial !== this.requestSerial) return;
@@ -203,6 +203,7 @@ window.DashboardView = {
       this.renderDiscrepancies(recalcRes.discrepanciesList || [], this.currentDiscFilter);
       this.renderAuditLogs(auditRes.logs || []);
       this.renderSourceValidation(this.currentData);
+      if (auditRes.error) window.Toast?.warning?.('Las métricas se cargaron, pero el historial de auditoría no está disponible.');
 
       const countMsg = recalcRes.resyncedCount > 0
         ? ` (${recalcRes.resyncedCount} archivos leídos de Google Sheets)`
