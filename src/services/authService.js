@@ -341,7 +341,8 @@ class AuthService {
   getUsersList() {
     if (storagePath.remoteEnabled) {
       const users = storagePath.readJson(this.usersFile, null);
-      if (Array.isArray(users) && users.length) return users;
+      if (Array.isArray(users)) return users;
+      if (storagePath.requireRemote().documents['users.json']) throw new Error('La base de usuarios remota no está disponible.');
       // Seed only users; never import residual inventories from a deployment.
       const seed = storagePath.clone(bundledUsers);
       if (!Array.isArray(seed) || !seed.length) throw new Error('Falta la base inicial de usuarios.');

@@ -157,6 +157,8 @@ test('remote user changes replace instance caches on the next request', async ()
     await storage.flushRemote('disable-user');
   });
   await storage.withRemoteRequest(() => assert.equal(auth.getUsersList()[0].active, false));
+  await store.commit(await store.snapshot(), new Map([['users.json', []]]), 'empty-users');
+  await storage.withRemoteRequest(() => assert.equal(auth.getUsersList().length, 0));
 });
 
 test('HTTP success waits for the Drive acknowledgement', async () => {

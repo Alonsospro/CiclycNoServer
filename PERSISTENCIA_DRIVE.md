@@ -6,7 +6,7 @@ La integración está preparada pero permanece desactivada hasta configurar y pr
 
 Carpeta elegida: [PERSISTENCIA](https://drive.google.com/drive/folders/1wFLtH6Cb9chLcyc4w-5MBYQYpzdSXNN6).
 
-Se detectó acceso de edición para cualquiera con el enlace. Antes de cargar estado, seleccionar **Compartir → Acceso general → Restringido → Guardar**. Crear dentro una subcarpeta **Estado de la aplicación** y usar su ID. No compartir públicamente la subcarpeta: incluye usuarios con contraseñas cifradas mediante hash, conteos y auditoría. Nunca guardar el token en GitHub, HTML o Google Docs.
+Se detectó acceso de edición para cualquiera con el enlace. Antes de cargar estado, seleccionar **Compartir → Acceso general → Restringido → Guardar**. Crear dentro una subcarpeta **Estado de la aplicación** y usar su ID. No compartir públicamente la subcarpeta: incluye hashes de contraseñas de usuarios, conteos y auditoría. Nunca guardar el token en GitHub, HTML o Google Docs.
 
 ## Publicar el servicio
 
